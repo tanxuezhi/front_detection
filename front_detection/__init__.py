@@ -118,17 +118,17 @@ def hewson_1998(latGrid, lonGrid, theta, u_wind, v_wind):
    
     ################### Computing M1 and M2 values ####################
     # compute m1, and m2, using k1, and k2 values
-    sign_m1_val = gx * mu_x + gy * mu_y
-    sign_m1_val = smooth_grid(sign_m1_val, center_weight=1., iter=1) #JJ
-    sign_m1 = np.zeros(sign_m1_val.shape)
-    sign_m1[sign_m1_val > 0.] = 1. 
-    sign_m1[sign_m1_val < 0.] = -1. 
 
-    m1 = abs_mu * sign_m1
+    # sign_m1_val = gx * mu_x + gy * mu_y
+    # sign_m1_val = smooth_grid(sign_m1_val, center_weight=1., iter=1) #JJ
+    # sign_m1 = np.zeros(sign_m1_val.shape)
+    # sign_m1[sign_m1_val > 0.] = 1. 
+    # sign_m1[sign_m1_val < 0.] = -1. 
+    # m1 = abs_mu * sign_m1
 
     # calculating m1 using eq(9), hewson 1998
     # m1 = -1*(mu_x, mu_y) *dot* (gx/gNorm, gy/gNorm)
-    # m1 = -1*(mu_x*gx/gNorm + mu_y*gy/gNorm)
+    m1 = -1*(mu_x*gx/gNorm + mu_y*gy/gNorm)
 
     # computing m2
     # compute distance grid
@@ -313,164 +313,6 @@ def expand_fronts(fronts, num_pixels):
 
     return fronts
 
-def catherine_fronts_for_date(latGrid, lonGrid, year, month, day, hour):
-    #################### CATHERINE FRONTS ###############
-    # get list of files in the folder
-    c_folder = '/mnt/drive1/processed_data/MERRA2fronts/%04d%02d/'%(year, month)
-
-    selectDate = '%04d%02d%02d'%(year, month, hour)
-
-    wf = np.zeros(latGrid.shape)
-    cf = np.zeros(latGrid.shape)
-
-    search_string = os.path.join(c_folder, '*%s_%02d*.ncdf'%(selectDate, hour))
-    c_files = glob.glob(search_string)
-    
-    if (not c_files):
-        print ("Catherine's front file not found.")
-        return wf, cf
-    
-    cf_lon = []
-    cf_lat = []
-    wf_lat = []
-    wf_lon = []
-    for c_file in c_files:
-      dataset = Dataset(c_file)
-      dataset.set_auto_mask(False)
-      c_lat = dataset.variables['latitude'][:]
-      c_lon = dataset.variables['longitude'][:]
-      c_slp = dataset.variables['MERRA2SLP'][:]
-      c_info = dataset.variables['storm_info'][:]
-
-      # CF_combined, CF_simmonds850, CF_hewson1km
-      # c_cf = dataset.variables['CF_combined'][:]
-      # c_cf = dataset.variables['CF_simmonds850'][:]
-      c_cf = dataset.variables['CF_hewson1km'][:]
-      c_cf_lon = c_cf[:,0]
-      c_cf_lat = c_cf[:,1]
-
-      cf_lat.extend(c_cf_lat.tolist())
-      cf_lon.extend(c_cf_lon.tolist())
-
-      # WF_Hewson850, WF_Hewson1Km, WF_HewsonWB
-      c_wf = dataset.variables['WF_Hewson1km'][:] 
-      # c_wf = dataset.variables['WF_Hewson850'][:] 
-      c_wf_lon = c_wf[:,0]
-      c_wf_lat = c_wf[:,1]
-      
-      wf_lat.extend(c_wf_lat.tolist())
-      wf_lon.extend(c_wf_lon.tolist())
-
-      dataset.close()
-
-    wf_lat = np.asarray(wf_lat)
-    wf_lon = np.asarray(wf_lon)
-    
-    cf_lat = np.asarray(cf_lat)
-    cf_lon = np.asarray(cf_lon)
-
-    lat_edges = np.asarray(latGrid[:,0])
-    lon_edges = np.asarray(lonGrid[0,:])
-
-    lat_div = lat_edges[1] - lat_edges[0]
-    lon_div = lon_edges[1] - lon_edges[0]
-
-    lat_edges = lat_edges - lat_div/2.
-    lat_edges = np.append(lat_edges, lat_edges[-1]+lat_div/2.)
-
-    lon_edges = lon_edges - lon_div/2.
-    lon_edges = np.append(lon_edges, lon_edges[-1]+lon_div/2.)
-    
-    wf, _, _ = np.histogram2d(wf_lat, wf_lon, bins=(lat_edges, lon_edges))
-    wf = np.double(wf > 0)
-    
-    cf, _, _ = np.histogram2d(cf_lat, cf_lon, bins=(lat_edges, lon_edges))
-    cf = np.double(cf > 0)
-    
-    return wf, cf
-        
-
-'''
-def detect_fronts_catherine(latGrid, lonGrid, selectLat, selectLon, selectDate, selectHH):
-    """ Code to read in catherine fronts given lat, lon and date"""
-    #################### CATHERINE FRONTS ###############
-   
-    selectYY = int(selectDate[0:4])
-    selectMM = int(selectDate[4:6]) 
-    selectDD = int(selectDate[6:8]) 
-
-    print (selectYY, selectMM, selectDD, latGrid.shape)
-    c_fronts = np.zeros(latGrid.shape)
-
-    # get list of files in the folder
-    c_folder = '/mnt/drive1/processed_data/MERRA2fronts/%04d%02d/'%(selectYY, selectMM)
-
-    c_file = ''
-    for dirpath, dirname, filenames in os.walk(c_folder):
-        for filename in filenames:
-            if (filename.endswith(".ncdf")):
-                fs = filename.split("_")
-                c_date = int(fs[1])
-                c_hr = float(fs[2])
-                c_lat = float(fs[3])
-                c_lon = float(fs[4])
-                if (c_lon < 0): 
-                    c_lon = c_lon + 360.
-
-                c_lat_str = '%.2f'%(c_lat)
-                c_lon_str = '%.2f'%(c_lon)
-
-                if ((c_date == int(selectDate)) & (c_hr == selectHH) & (c_lat_str == selectLat) & (c_lon_str == selectLon)):
-                    c_file = os.path.join(dirpath, filename)
-                    break
-  
-    if (not c_file):
-        print ("Catherine's front file not found.")
-        return {'fronts':c_fronts, 'cf_lon':[], 'cf_lat':[],'wf_lon':[],'wf_lat':[]}
-
-    dataset = Dataset(c_file)
-    c_lat = dataset.variables['latitude'][:]
-    c_lon = dataset.variables['longitude'][:]
-    c_slp = dataset.variables['MERRA2SLP'][:]
-    c_info = dataset.variables['storm_info'][:]
-
-    # CF_combined, CF_simmonds850, CF_hewson1km
-    c_cf = dataset.variables['CF_combined'][:]
-    # c_cf = dataset.variables['CF_simmonds850'][:]
-    c_cf_lon = c_cf[:,0]
-    c_cf_lon[c_cf_lon < 0] = c_cf_lon[c_cf_lon < 0] + 360.
-    c_cf_lat = c_cf[:,1]
-    # WF_Hewson850, WF_Hewson1Km, WF_HewsonWB
-    c_wf = dataset.variables['WF_Hewson1km'][:] 
-    # c_wf = dataset.variables['WF_Hewson850'][:] 
-    c_wf_lon = c_wf[:,0]
-    c_wf_lon[c_wf_lon < 0] = c_wf_lon[c_wf_lon < 0] + 360.
-    c_wf_lat = c_wf[:,1]
-
-
-    f_sim = dataset.variables['CF_simmonds850'][:]
-    f_com = c_cf
-    f_hew = c_wf
-
-    dataset.close()
-
-    # overlay catherine fronts on the input grid
-    if (not (c_cf_lon.size == 0)):
-        for i_lon, i_lat in zip(c_cf_lon, c_cf_lat):
-            dist = compute_dist_from_cdt(latGrid, lonGrid, i_lat, i_lon)
-            ind = np.nanargmin(dist)
-            ind_x, ind_y = np.unravel_index(ind,latGrid.shape)
-            c_fronts[ind_x, ind_y] = -10
-    
-    if (not (c_wf_lon.size == 0)): 
-        for i_lon, i_lat in zip(c_wf_lon, c_wf_lat):
-            dist = compute_dist_from_cdt(latGrid, lonGrid, i_lat, i_lon)
-            ind = np.nanargmin(dist)
-            ind_x, ind_y = np.unravel_index(ind,latGrid.shape)
-            c_fronts[ind_x, ind_y] = 10
-
-    return {'fronts':c_fronts, 'cf_lon':c_cf_lon, 'cf_lat':c_cf_lat,'wf_lon':c_wf_lon,'wf_lat':c_wf_lat}
-'''
 # computing the distance given the lat and lon grid
 def compute_dist_from_cdt(lat, lon, centerLat, centerLon):
 

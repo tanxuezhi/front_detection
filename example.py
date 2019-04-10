@@ -1,12 +1,8 @@
 #!/usr/bin/env python
-import sys
-sys.path.append('..')
 import numpy as np 
 import front_detection as fd
-import scipy.io as sio
+from front_detection import catherine
 from scipy.ndimage import label, generate_binary_structure
-from scipy import stats
-import os
 import glob
 from netCDF4 import Dataset
 
@@ -23,22 +19,30 @@ folder_format = '/localdrive/drive10/jj/datacycs/out_nc/{0}/{1}/{2}/'
 
 model_folder = '/mnt/drive5/merra2/six_hrly/'
 
+print('Debug: Reading in data ...', end='')
+
 slv_file = '/mnt/drive5/merra2/six_hrly/MERRA_%d_slv.nc'%(year)
 slv_2_file = '/mnt/drive5/merra2/six_hrly/MERRA_%d_slv_2.nc'%(year)
-
 slv_id = Dataset(slv_file, 'r')
-slp = slv_id.variables['slp'][:]
+slv_id.set_auto_mask(False)
+my_lat = slv_id.variables['lat'][:]
+my_lon = slv_id.variables['lon'][:]
+my_slp = slv_id.variables['slp'][:]/100.
+my_time = slv_id.variables['time'][:]
+my_date = np.asarray([dt.datetime.fromordinal(int(i_time - 366.)) + dt.timedelta(hours=(i_time%1)*24.) for i_time in my_time])
+my_lon, my_lat = np.meshgrid(my_lon, my_lat)
 slv_id.close()
+
 
 # loading in merra2 inst6_3d_ana_Np data
 ncid = Dataset('/localdrive/drive10/merra2/inst6_3d_ana_Np/MERRA2_300.inst6_3d_ana_Np.20070101.nc4', 'r')
 ncid.set_auto_mask(False)
 in_lon = ncid.variables['lon'][:]
 in_lat = ncid.variables['lat'][:]
-lev = ncid.variables['lev'][:]
-time = np.asarray(ncid.variables['time'][:], dtype=float)
-slp = ncid.variables['SLP'][:]
+in_lev = ncid.variables['lev'][:]
+in_time = np.asarray(ncid.variables['time'][:], dtype=float)
 
+in_slp = ncid.variables['SLP']
 T = ncid.variables['T']
 U = ncid.variables['U']
 V = ncid.variables['V']
@@ -47,30 +51,59 @@ geoH = ncid.variables['H']
 # creating the cdt grid 
 lon, lat = np.meshgrid(in_lon, in_lat)
 
-lev850 = np.where(lev == 850)[0][0]
+lev850 = np.where(in_lev == 850)[0][0]
 
-for t_step in range(1, time.shape[0]):
+print(' Completed!')
+
+for t_step in range(1, in_time.shape[0]):
 
   # creating a datetime variable for the current time step
-  date = dt.datetime(2007, 1, 1) + dt.timedelta(minutes=time[t_step])
+  date = dt.datetime(2007, 1, 1) + dt.timedelta(minutes=in_time[t_step])
 
   # getting catherinees fronts for the time step
-  cath_wf, cath_cf = fd.catherine_fronts_for_date(lat, lon, date.year, date.month, date.day, date.hour)
+  cath_wf, cath_cf, cath_slp, cath_lat, cath_lon = catherine.fronts_for_date(lat, lon, date.year, date.month, date.day, date.hour)
+  
+  llat = np.nanmin(cath_lat)
+  ulat = np.nanmax(cath_lat)
+  llon = np.nanmin(cath_lon)
+  ulon = np.nanmax(cath_lon)
 
-  plt.figure()
-  m = Basemap(projection='cyl', urcrnrlat=90, llcrnrlat=0, urcrnrlon=0, llcrnrlon=-180)
-  pc = m.pcolormesh(lon, lat, cath_wf*10 + cath_cf*-10, cmap='bwr')
-  m.contour(lon, lat, slp[t_step, :, :], lw=1.0, levels=[960, 980, 1000])
-  m.drawcoastlines(linewidth=0.2)
-  m.colorbar(pc)
-  plt.title('Catherine Fronts [Hewson 1km]')
-  plt.savefig('./images/cath_hew_1km.png', dpi=300)
-  plt.show()
+  # getting the different slp values for MERRA2
+  my_t_slp = np.squeeze(my_slp[(my_date == date), :, :])
+  slp = in_slp[t_step, :, :]/100.
 
-  break
+  # plt.figure(figsize=(3,9))
+  # plt.subplot(311)
+  # m = Basemap(projection='cyl', urcrnrlat=ulat, llcrnrlat=llat, urcrnrlon=ulon, llcrnrlon=llon)
+  # m.contourf(lon, lat, slp, levels=np.arange(960, 1100, 10), cmap='jet')
+  # m.drawcoastlines()
+  # m.drawparallels(np.arange(-90, 90, 30), labels=[False, True, False, False])
+  # m.drawmeridians(np.arange(-180, 180, 30), labels=[False, False, False, True])
+  # m.colorbar()
+  # plt.title('INST6_3d_ANA_NP')
+  # plt.subplot(312)
+  # m = Basemap(projection='cyl', urcrnrlat=ulat, llcrnrlat=llat, urcrnrlon=ulon, llcrnrlon=llon)
+  # m.contourf(my_lon, my_lat, my_t_slp, levels=np.arange(960, 1100, 10), cmap='jet')
+  # m.colorbar()
+  # m.drawcoastlines()
+  # m.drawparallels(np.arange(-90, 90, 30), labels=[False, True, False, False])
+  # m.drawmeridians(np.arange(-180, 180, 30), labels=[False, False, False, True])
+  # plt.title('MY 6H averages SLP')
+  # plt.subplot(313)
+  # m = Basemap(projection='cyl', urcrnrlat=ulat, llcrnrlat=llat, urcrnrlon=ulon, llcrnrlon=llon)
+  # m.contourf(cath_lon, cath_lat, cath_slp, levels=np.arange(960, 1100, 10), cmap='jet')
+  # m.colorbar()
+  # m.drawcoastlines()
+  # m.drawparallels(np.arange(-90, 90, 30), labels=[False, True, False, False])
+  # m.drawmeridians(np.arange(-180, 180, 30), labels=[False, False, False, True])
+  # plt.title('CATH SLP')
+  # plt.tight_layout()
+  # plt.savefig('./images/slp_compare.png', dpi=300.)
+  # plt.close('all')
 
- 
   # extracting the current and previous time step U & V wind speeds for the fronts
+  # have to smooth the input data, catherine smooths it 10 times, so do I
+  # weighting the center point 4x as heavier 
   prev_u850 = fd.smooth_grid(U[t_step-1, lev850, :, :], iter=10, center_weight=4)
   u850 = fd.smooth_grid(U[t_step, lev850, :, :], iter=10, center_weight=4) 
 
@@ -93,7 +126,7 @@ for t_step in range(1, time.shape[0]):
   idx = (H1km_diff == min_val) # getting the index mask of all the minimum values 
   T_3d = np.ma.masked_array(T[t_step, :, :, :], mask=~idx, fill_value=np.nan) # creating a temperature 3d array
   t1km = np.nanmin(T_3d.filled(),axis=0)  # getting the 1km value by finding the minimum value
-  pres = np.repeat(lev[:, np.newaxis], H.shape[1], axis=-1) # creating the pressure level into 3d array
+  pres = np.repeat(in_lev[:, np.newaxis], H.shape[1], axis=-1) # creating the pressure level into 3d array
   pres = np.repeat(pres[:, :, np.newaxis], H.shape[2], axis=-1) # creating the pressure level into 3d array 
   pres = np.ma.masked_array(pres, mask=~idx, fill_value=np.nan) # masking out pressure values using minimum 1km mask
   p1km = np.nanmin(pres, axis=0) # getting the pressure at 1km
@@ -101,12 +134,12 @@ for t_step in range(1, time.shape[0]):
   theta1km = fd.smooth_grid(theta1km, iter=10, center_weight=4) # smoothing out the theta value
  
   # computing the simmonds fronts
-  cf_sim = fd.simmonds_et_al_2012(lat, lon, prev_u850, prev_v850, u850, v850) 
+  f_sim = fd.simmonds_et_al_2012(lat, lon, prev_u850, prev_v850, u850, v850) 
 
   # computing the hewson fronts using 1km temperature values, and U & V wind speeds at 850
-  f_hew = fd.hewson_1998(lat, lon, theta1km, u850, v850)
+  # f_hew = fd.hewson_1998(lat, lon, theta1km, u850, v850)
 
-  # f_hew = fd.hewson_1998(lat, lon, theta850, u850, v850)
+  f_hew = fd.hewson_1998(lat, lon, theta850, u850, v850)
   # zc_6, zc_7 = fd.hewson_1998(lat, lon, theta850, u850, v850)
   
   wf_hew = f_hew['wf']
@@ -114,8 +147,8 @@ for t_step in range(1, time.shape[0]):
   cf_sim = f_sim['cf']
 
   wf = np.copy(wf_hew)
-  cf = np.double((cf_hew + cf_sim) > 0)
-  # cf = np.copy(cf_sim)
+  # cf = np.double((cf_hew + cf_sim) > 0)
+  cf = np.copy(cf_sim)
  
   ## Cleaning up the fronts
   s = generate_binary_structure(2,2)
@@ -147,28 +180,94 @@ for t_step in range(1, time.shape[0]):
         for y in remove_y: 
           cf[uni_x, y] = 0.
 
-  plt.figure()
+  llat = 0
+  ulat = 90
+  llon = -180
+  ulon = 0 
+
+  plt.figure(figsize=(12,12))
+  fronts = wf*10 + cf*-10
+  fronts = cf*-10
+  fronts[~((fronts == 10) | (fronts == -10))] = np.nan
   plt.subplot(2,1,1)
-  m = Basemap(projection='cyl', urcrnrlat=90, llcrnrlat=0, urcrnrlon=0, llcrnrlon=-180)
-  m.contour(lon, lat, slp[t_step, :, :], lw=1.0, levels=[960, 980, 1000])
-  m.pcolormesh(lon, lat, wf*10 + cf*-10, cmap='bwr')
+  m = Basemap(projection='cyl', urcrnrlat=ulat, llcrnrlat=llat, urcrnrlon=ulon, llcrnrlon=llon)
+  csf = plt.contourf(lon, lat, theta850)
+  cs = plt.contour(lon, lat, slp, lw=0.5, ls='--', colors='k')
+  plt.clabel(cs, inline=1., fontsize=10., fmt='%.0f')
+  pc = m.pcolormesh(lon, lat, fronts, cmap='bwr')
+  m.colorbar(csf)
   m.drawcoastlines(linewidth=0.2)
-  m.colorbar()
+  plt.axhline(y=0., linewidth=1.0, linestyle='--')
   plt.title('My Fronts')
 
   plt.subplot(2,1,2)
-  m = Basemap(projection='cyl', urcrnrlat=90, llcrnrlat=0, urcrnrlon=0, llcrnrlon=-180)
-  m.contour(lon, lat, slp[t_step, :, :], lw=1.0, levels=[960, 980, 1000])
-  m.pcolormesh(lon, lat, cath_wf*10 + cath_cf*-10, cmap='bwr')
+  fronts = cath_wf*10 + cath_cf*-10
+  fronts = cath_cf*-10
+  fronts[~((fronts == 10) | (fronts == -10))] = np.nan
+  m = Basemap(projection='cyl', urcrnrlat=ulat, llcrnrlat=llat, urcrnrlon=ulon, llcrnrlon=llon)
+  # csf = plt.contourf(cath_lon, cath_lat, cath_slp)
+  csf = plt.contourf(lon, lat, theta850)
+  cs = plt.contour(lon, lat, slp, lw=0.5, ls='--', colors='k')
+  plt.clabel(cs, inline=1., fontsize=10., fmt='%.0f')
+  pc = m.pcolormesh(lon, lat, fronts, cmap='bwr')
+  m.colorbar(csf)
   m.drawcoastlines(linewidth=0.2)
-  m.colorbar()
+  plt.axhline(y=0., linewidth=1.0, linestyle='--')
   plt.title('Catherine Fronts')
 
   plt.savefig('./images/test.png', dpi=300)
-
+  plt.show()
+  
   break
 
   # plt.savefig('./images/test.png', dpi=300.)
 
 # slv2_id.close()
 ncid.close()
+
+'''
+### temp codes -- delete later
+# code to test slp data
+plt.close('all')
+llat = np.nanmin(cath_lat)
+ulat = np.nanmax(cath_lat)
+llon = np.nanmin(cath_lon)
+ulon = np.nanmax(cath_lon)
+
+my_ind = (my_date == date)
+my_t_slp = np.squeeze(my_slp[my_ind, :, :])
+slp = in_slp[t_step, :, :]/100.
+
+plt.figure(figsize=(3,9))
+plt.subplot(311)
+m = Basemap(projection='cyl', urcrnrlat=ulat, llcrnrlat=llat, urcrnrlon=ulon, llcrnrlon=llon)
+m.contourf(lon, lat, slp, levels=np.arange(960, 1100, 10), cmap='jet')
+m.drawcoastlines()
+m.drawparallels(np.arange(-90, 90, 30), labels=[False, True, False, False])
+m.drawmeridians(np.arange(-180, 180, 30), labels=[False, False, False, True])
+m.colorbar()
+plt.title('INST6_3d_ANA_NP')
+
+plt.subplot(312)
+m = Basemap(projection='cyl', urcrnrlat=ulat, llcrnrlat=llat, urcrnrlon=ulon, llcrnrlon=llon)
+m.contourf(my_lon, my_lat, my_t_slp, levels=np.arange(960, 1100, 10), cmap='jet')
+m.colorbar()
+m.drawcoastlines()
+m.drawparallels(np.arange(-90, 90, 30), labels=[False, True, False, False])
+m.drawmeridians(np.arange(-180, 180, 30), labels=[False, False, False, True])
+plt.title('MY 6H averages SLP')
+
+plt.subplot(313)
+m = Basemap(projection='cyl', urcrnrlat=ulat, llcrnrlat=llat, urcrnrlon=ulon, llcrnrlon=llon)
+m.contourf(cath_lon, cath_lat, cath_slp, levels=np.arange(960, 1100, 10), cmap='jet')
+m.colorbar()
+m.drawcoastlines()
+m.drawparallels(np.arange(-90, 90, 30), labels=[False, True, False, False])
+m.drawmeridians(np.arange(-180, 180, 30), labels=[False, False, False, True])
+plt.title('CATH SLP')
+
+plt.tight_layout()
+plt.savefig('./images/slp_compare.png', dpi=300.)
+
+ncid.close()
+'''
