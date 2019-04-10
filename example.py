@@ -26,21 +26,6 @@ model_folder = '/mnt/drive5/merra2/six_hrly/'
 slv_file = '/mnt/drive5/merra2/six_hrly/MERRA_%d_slv.nc'%(year)
 slv_2_file = '/mnt/drive5/merra2/six_hrly/MERRA_%d_slv_2.nc'%(year)
 
-# slv2_id = Dataset(slv_2_file, 'r')
-# in_u850 = slv2_id.variables['u850']
-# in_v850 = slv2_id.variables['v850']
-# in_t850 = slv2_id.variables['t850']
-# time = slv2_id.variables['time'][:]
-#
-# in_lat = slv2_id.variables['lat'][:]
-# in_lon = slv2_id.variables['lon'][:]
-# in_lat.fill_value = np.nan
-# in_lon.fill_value = np.nan
-# in_lat = in_lat.filled()
-# in_lon = in_lon.filled()
-# slv2_id.close()
-
-
 slv_id = Dataset(slv_file, 'r')
 slp = slv_id.variables['slp'][:]
 slv_id.close()
@@ -79,7 +64,7 @@ for t_step in range(1, time.shape[0]):
   m.drawcoastlines(linewidth=0.2)
   m.colorbar(pc)
   plt.title('Catherine Fronts [Hewson 1km]')
-  plt.savefig('./del_b4_commit/cath_hew_1km.png', dpi=300)
+  plt.savefig('./images/cath_hew_1km.png', dpi=300)
   plt.show()
 
   break
@@ -179,11 +164,11 @@ for t_step in range(1, time.shape[0]):
   m.colorbar()
   plt.title('Catherine Fronts')
 
-  plt.savefig('./del_b4_commit/test.png', dpi=300)
+  plt.savefig('./images/test.png', dpi=300)
 
   break
 
-  # plt.savefig('./del_b4_commit/test.png', dpi=300.)
+  # plt.savefig('./images/test.png', dpi=300.)
 
 # slv2_id.close()
 ncid.close()

@@ -1,0 +1,19 @@
+# compiled files
+*.pyc
+
+# backup files
+*.bak
+
+# images
+images/*
+*.png
+*.jpg
+*.jpeg
+
+# data files
+*.mat
+*.nc4
+*.nc
+
+# text files
+*.txt
