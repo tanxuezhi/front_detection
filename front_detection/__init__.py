@@ -21,7 +21,16 @@ import matplotlib as mpl
 import os
 import glob
 
+def plot(data, cmap='jet', **kwargs):
+    '''Temporary code to plot figures quicky.'''
+    plt.figure()
+    plt.pcolormesh(data, cmap=cmap, **kwargs)
+    plt.colorbar()
+    plt.draw()
+    plt.show(block=False)
+
 def four_corner_shift(arr, shift_len=1):
+    '''Shifts an array by the shift_len in all 4 directions'''
     up = np.pad(arr, ((shift_len, 0), (0, 0)), mode='constant', constant_values=np.nan)[:-shift_len, :]
     down = np.pad(arr, ((0, shift_len), (0, 0)), mode='constant', constant_values=np.nan)[shift_len:, :]
     left = np.roll(arr, -1, axis=1)
@@ -30,145 +39,44 @@ def four_corner_shift(arr, shift_len=1):
     return up, down, left, right
 
 def theta_from_temp_pres(temp, pres):
-  return temp * (1000./pres)**(2./7.)
+    '''Computing theta given temperature and pressure values'''
+    return temp * (1000./pres)**(2/7)
 
-def clean_fronts(wf, cf, cyc_lon, cyc_lat, cyc_center_lon, cyc_center_lat):
 
-    w_label, w_num = label(wf)
-    c_label, c_num = label(cf)
-
-    wf_list = []
-
-    for i_w in range(1, w_num+1):
-      ind = np.argwhere(w_label == i_w)
-
-      # gettin rid of clusters less than 2 pts
-      if (ind.shape[0] <= 2):
-        continue
-      i_w_lat = [cyc_lat[i_ind[0], i_ind[1]] for i_ind in ind]
-      i_w_lon = [cyc_lon[i_ind[0], i_ind[1]] for i_ind in ind]
-
-      # storm attribution
-      mean_lat = np.nanmean(i_w_lat)
-      mean_lon = np.nanmean(i_w_lon)
-      dist_deg = get_distance_deg(mean_lon, mean_lat, cyc_center_lon, cyc_center_lat)
-
-      # strom attibution conditions
-      if not ((mean_lon > cyc_center_lon) & (dist_deg < 15.) & (abs(cyc_center_lat - mean_lat) < 5.)):
-        continue
-
-      # final list of values 
-      wf_list.append([i_w_lon, i_w_lat])
-
-    cf_list = []
-    # all_cf_list = []
-    for i_c in range(1, c_num+1):
-      ind = np.argwhere(c_label == i_c)
-      if (ind.shape[0] <= 2):
-        continue
-
-      # keeping only the eastern most point on the front cluster
-      i_c_lat = np.asarray([cyc_lat[i_ind[0], i_ind[1]] for i_ind in ind])
-      i_c_lon = np.asarray([cyc_lon[i_ind[0], i_ind[1]] for i_ind in ind])
-      i_c_ind = np.asarray([i_ind for i_ind in ind])
-      # all_cf_list.append([i_c_lon, i_c_lat])
-
-      f_lat = []
-      f_lon = []
-      for uni_lat in set(i_c_lat):
-        uni_ind = (i_c_lat == uni_lat)
-        f_lat.append(uni_lat)
-        f_lon.append(np.nanmax(i_c_lon[uni_ind]))
-    
-      # strom attribution
-      mean_lat = np.nanmean(f_lat)
-      mean_lon = np.nanmean(f_lon)
-      dist_deg = get_distance_deg(mean_lon, mean_lat, cyc_center_lon, cyc_center_lat)
-
-      # storm attribution conditions
-      if not ((dist_deg < 15) & (abs(mean_lon - cyc_center_lon) < 7.5) & (mean_lat < cyc_center_lat)):
-        continue
-      
-      # addtiional conditions before selecting cold fronts
-      if not ((np.any(np.abs(f_lon - cyc_center_lon) < 2.5)) & ((90 - np.abs(np.nanmax(f_lat))) < 5) & ((cyc_center_lon - np.median(f_lon)) > 15)):
-        continue
-      
-      # for the remaining clusters I have to apply Haning filter that simmonds et al, 2012, allow more than one cluster
-      cf_list.append([f_lon, f_lat])
-
-    return wf_list, cf_list
-
-def hewson_1998(latGrid, lonGrid, theta, u_wind, v_wind):
-
-    # computing first derivative
+def hewson_1998(latGrid, lonGrid, theta, H850):
+    '''Computing the fronts based on Hewson 1998 methodology.'''
     gx, gy = geo_gradient(latGrid, lonGrid, theta)
-    gNorm = norm(gx, gy) 
+    gNorm = norm(gx, gy)
+    mux, muy = geo_gradient(latGrid, lonGrid, gNorm)
 
-    # computing the 2nd derivative using the first derivative
-    # gNorm_gNorm = grad(abs(gNorm))
-    gx_gNorm, gy_gNorm = geo_gradient(latGrid, lonGrid, gNorm)
-    gNorm_gNorm = norm(gx_gNorm, gy_gNorm)
-    
-    # let mu = grad(abs(grad(theta)))
-    mu_x = np.copy(gx_gNorm)
-    mu_y = np.copy(gy_gNorm)
-    abs_mu = norm(mu_x, mu_y) 
+    abs_mu = norm(mux, muy)
+    grad_abs_mux, grad_abs_muy = geo_gradient(latGrid, lonGrid, abs_mu)
 
-    grad_abs_mu_x, grad_abs_mu_y = geo_gradient(latGrid, lonGrid, abs_mu)
-   
-    ################### Computing M1 and M2 values ####################
-    # compute m1, and m2, using k1, and k2 values
+    product = (mux * gx + muy*gy)
+    product_smooth = smooth_grid(product, iter=1, center_weight=1)
+    m1 = -1*product_smooth/gNorm
+    m2 = gNorm + (1/np.sqrt(2)) * 100 * 1000 * abs_mu
 
-    # sign_m1_val = gx * mu_x + gy * mu_y
-    # sign_m1_val = smooth_grid(sign_m1_val, center_weight=1., iter=1) #JJ
-    # sign_m1 = np.zeros(sign_m1_val.shape)
-    # sign_m1[sign_m1_val > 0.] = 1. 
-    # sign_m1[sign_m1_val < 0.] = -1. 
-    # m1 = abs_mu * sign_m1
-
-    # calculating m1 using eq(9), hewson 1998
-    # m1 = -1*(mu_x, mu_y) *dot* (gx/gNorm, gy/gNorm)
-    m1 = -1*(mu_x*gx/gNorm + mu_y*gy/gNorm)
-
-    # computing m2
-    # compute distance grid
-    distX, distY = compute_dist_grids(latGrid, lonGrid)
-    dist_avg = np.sqrt(distX**2 + distY**2)
-
-    # m2 (Hewson 1998) 
-    mconst = 1/math.sqrt(2)
-    m2 = gNorm + mconst * dist_avg * gNorm_gNorm / 100
-   
-    k1 = 0.33 # degC per 100km per 100km; gridlength of 100km
-    k2 = 1.49 # degC per 100km
-    # all my gradients are calculated as per 100 km, so here I have to account that for m2 calculation, my gridlenght has to be converted as per 100km as well
+    k1 = 0.33 * 1e-10
+    k2 = 1.49 * 1e-5
 
     m1_mask = m1 > k1
     m2_mask = m2 > k2
-
-    ########### Computing eq 6 from the Hewson
-
-    # first I have to compute the positive direciton s vector using appendix 2 
-    # s is the five point mean axis (appendix 2)
-    # then project the 4 outer vectors in the positive s direction vector 
-    # compute total divergence of the resolved vectors using simple first order finite differencing (p 46, Hewson 1998)
-
+    
     # S five point mean
     mu_mag = np.copy(abs_mu)
-
-    # I take care of division by zero in the arctan2 function, also I force the beta to tbe [0, np.pi]
-    # I think Catherine does not account for this
-    valid_ind = (~(mu_x == 0))
-
+    
+    # getting the angle and computing betamean
     mu_ang = np.empty(abs_mu.shape)*np.nan
-    mu_ang[~valid_ind] = np.pi/2.
-    mu_ang[valid_ind] = np.arctan(mu_y[valid_ind]/mu_x[valid_ind])
-    mu_ang[mu_ang < 0] = mu_ang[mu_ang < 0] + np.pi
-   
+    mu_ang = np.arctan2(muy, mux)
+    mu_ang[(mux == 0) & (muy > 0)] = np.pi/2.
+    mu_ang[(mux == 0) & (muy < 0)] = 3*np.pi/2.
+    mu_ang[(muy == 0)] = 0.
+    
     # shift to get the 4 corners 
     up_shift_ang, down_shift_ang, left_shift_ang, right_shift_ang = four_corner_shift(mu_ang, shift_len=1)
     up_shift_mag, down_shift_mag, left_shift_mag, right_shift_mag = four_corner_shift(mu_mag, shift_len=1)
-    
+
     # stacking the 5 nearest neighbors for the calculation
     ang_stack = np.dstack((mu_ang, up_shift_ang, down_shift_ang, right_shift_ang, left_shift_ang))
     mag_stack = np.dstack((mu_mag, up_shift_mag, down_shift_mag, right_shift_mag, left_shift_mag))
@@ -178,74 +86,87 @@ def hewson_1998(latGrid, lonGrid, theta, u_wind, v_wind):
     sump = np.nansum(mag_stack * np.cos(2*ang_stack), 2)
     sumq = np.nansum(mag_stack * np.sin(2*ang_stack), 2)
 
-    # from P, Q and n, we have to compute the D and beta mean values
-    # again here we make sure B mean is in the range [0, pi], and also take care of division by zero
-    # this will give us the 5 mean axis of the "s" vector, in polar cdts
-    valid_ind = ~(sump == 0)
-    beta_mean = np.empty(sump.shape)*np.nan
-    beta_mean[~valid_ind] = np.pi/2.
-    beta_mean[valid_ind] = .5 * np.arctan(sumq[valid_ind]/sump[valid_ind])
-    beta_mean[beta_mean < 0] = beta_mean[beta_mean < 0] + np.pi
-    D_mean = (1/n) * np.sqrt(sump**2 + sumq**2)
-
+    betamean = np.arctan2(sumq, sump) * .5
+    
     ## Resolve the four outer vectors into the positive s_hat [D_mean, B_mean]
-    # shifting the mu_x and mu_y to get the 4 corners
+    # shifting the mux and muy to get the 4 corners
     # this overlaps the neighbors to allow us to vector caculate
-    up_shift_mu_x, down_shift_mu_x, left_shift_mu_x, right_shift_mu_x = four_corner_shift(mu_x, shift_len=1)
-    up_shift_mu_y, down_shift_mu_y, left_shift_mu_y, right_shift_mu_y = four_corner_shift(mu_y, shift_len=1)
+    up_mux, down_mux, left_mux, right_mux = four_corner_shift(mux, shift_len=1)
+    up_muy, down_muy, left_muy, right_muy = four_corner_shift(muy, shift_len=1)
 
-    # resolve the 4 outer x,y vectors onto the center postiive s_hat
-    resolve_up = up_shift_mu_x * np.cos(beta_mean) + up_shift_mu_y * np.sin(beta_mean)
-    resolve_down = down_shift_mu_x * np.cos(beta_mean) + down_shift_mu_y * np.sin(beta_mean)
-    resolve_left = left_shift_mu_x * np.cos(beta_mean) + left_shift_mu_y * np.sin(beta_mean)
-    resolve_right = right_shift_mu_x * np.cos(beta_mean) + right_shift_mu_y * np.sin(beta_mean)
+    up_lat, down_lat, left_lat, right_lat = four_corner_shift(latGrid, shift_len=1)
+    up_lon, down_lon, left_lon, right_lon = four_corner_shift(lonGrid, shift_len=1)
+    left_lon[:, -1] = left_lon[:, -1] + 360
+    right_lon[:, 0] = right_lon[:, 0] - 360
 
-    # computing the total divergence of the resolved vectors, using simple first order diffferentiating
-    # have to find the distance between the two grid points, at each grid point
-    distX, distY = compute_dist_grids(latGrid, lonGrid)
+    dy = dist_between_grids(up_lat, up_lon, down_lat, down_lon)
+    dx = dist_between_grids(left_lat, left_lon, right_lat, right_lon)
 
-    # # this is not how you find the total divergence of the resolved vectors
-    # tot_divergence = ((resolve_up * np.cos(beta_mean))/distX) + ((resolve_up * np.sin(beta_mean))/distY) \
-    #     + ((resolve_down * np.cos(beta_mean))/distX) + ((resolve_down * np.sin(beta_mean))/distY) \
-    #     + ((resolve_left * np.cos(beta_mean))/distX) + ((resolve_left * np.sin(beta_mean))/distY) \
-    #     + ((resolve_right * np.cos(beta_mean))/distX) + ((resolve_right * np.sin(beta_mean))/distY)
+    # computing the primes should be done as follows
+    # down - up --> dy
+    # left - right  --> dx
+    down_prime = down_mux*np.cos(betamean) + down_muy*np.sin(betamean)
+    up_prime = up_mux*np.cos(betamean) + up_muy*np.sin(betamean)
 
-    tot_divergence = (100*(resolve_right - resolve_left)/(2*distX)) + (100*(resolve_up - resolve_down)/(2*distY))
+    left_prime = left_mux*np.cos(betamean) + left_muy*np.sin(betamean)
+    right_prime = right_mux*np.cos(betamean) + right_muy*np.sin(betamean)
 
-    # tot_divergence = geo_divergence(latGrid, lonGrid, resolve_up*np.cos(beta_mean), resolve_up*np.sin(beta_mean)) \
-    #     + geo_divergence(latGrid, lonGrid, resolve_down*np.cos(beta_mean), resolve_down*np.sin(beta_mean)) \
-    #     + geo_divergence(latGrid, lonGrid, resolve_right*np.cos(beta_mean), resolve_right*np.sin(beta_mean)) \
-    #     + geo_divergence(latGrid, lonGrid, resolve_left*np.cos(beta_mean), resolve_left*np.sin(beta_mean))
+    tot_div = (down_prime - up_prime)*np.sin(betamean)/dy + (left_prime - right_prime)*np.cos(betamean)/dx
 
-    eq6 = tot_divergence
-    eq6_masked = np.copy(eq6)
-    eq6_masked[~(m1_mask & m2_mask)] = np.nan
+    eq6 = tot_div
+    zc_6 = mask_zero_contour(latGrid, lonGrid, eq6)
+    zc_6[~(m1_mask & m2_mask)] = 0.
+
+    # # ############### Method using equation 7 #############################
+    # eq7 = ((grad_abs_mu_x * mu_x) + (grad_abs_mu_y * mu_y))/(abs_mu)
+    #
+    # ########## Getting zero contour line using equation 7
+    # eq7_masked = np.copy(eq7)
+    # eq7_masked[~(m1_mask & m2_mask)] = np.nan
+    #
+    # zc_7 = mask_zero_contour(latGrid, lonGrid, eq7_masked)
+    #
+    # zc_7 = mask_zero_contour(latGrid, lonGrid, eq7)
+    # zc_7[~(m1_mask & m2_mask)] = np.nan
+    #
+
+    ######### getting cold and warm fronts
+    # first, have to compute geostrophic winds at 850 hPa
+
+    # lat, lon, H
+    omega = 7.3e-5 # rad/s
+    rot_param = 9.8/(2 * omega * np.sin(latGrid * np.pi/180.))
+
+    rot_param[np.abs(latGrid) > 70] = np.nan
+    rot_param[np.abs(latGrid) < 20] = np.nan
+
+    up_H850, down_H850, left_H850, right_H850 = four_corner_shift(H850, shift_len=1)
+    up_lat, down_lat, left_lat, right_lat = four_corner_shift(latGrid, shift_len=1)
+    up_lon, down_lon, left_lon, right_lon = four_corner_shift(lonGrid, shift_len=1)
+
+    dz_y = (down_H850  - up_H850)
+    dy = dist_between_grids(up_lat, up_lon, down_lat, down_lon)
     
-    zc_6 = mask_zero_contour(latGrid, lonGrid, tot_divergence)
-    zc_6[~(m1_mask & m2_mask)] = np.nan
+    dz_x = (left_H850  - right_H850)
+    dx = dist_between_grids(left_lat, left_lon, right_lat, right_lon)
+
+    Vy = rot_param * (dz_y/dy)
+    Vx = rot_param * (dz_x/dx)
+    
+    vgx = -Vx*gx
+    vgy = -Vy*gy
+
+    # geostrophic thermal advection
+    gta = vgx + vgy
    
-    ########## Getting zero contour line using equation 6
-    # zc_6 = mask_zero_contour(latGrid, lonGrid, eq6_masked)
+    # warm and cold front masks
+    wf_mask = np.double(gta > 0)
+    cf_mask = np.double(gta < 0)
 
-    ############### Method using equation 7 #############################
-    eq7 = ((grad_abs_mu_x * mu_x) + (grad_abs_mu_y * mu_y))/(abs_mu)
 
-    ########## Getting zero contour line using equation 7
-    eq7_masked = np.copy(eq7)
-    eq7_masked[~(m1_mask & m2_mask)] = np.nan
-    
-    zc_7 = mask_zero_contour(latGrid, lonGrid, eq7_masked)
-    
-    zc_7 = mask_zero_contour(latGrid, lonGrid, eq7)
-    zc_7[~(m1_mask & m2_mask)] = np.nan
-    
-    # getting cold and warm fronts
-    a_gt = geostrophic_thermal_advection(gx, gy, u_wind, v_wind)
-    wf_mask = np.double(a_gt > 0)
-    cf_mask = np.double(a_gt < 0)
-   
-    # return {'wf': wf_mask*zc_6, 'cf': cf_mask*zc_6}
-    return {'wf': wf_mask*zc_7, 'cf': cf_mask*zc_7}
+    return {'wf': wf_mask*zc_6, 'cf': cf_mask*zc_6}, np.double(eq6)
+    # return {'wf': zc_6, 'cf': zc_6}
+    # return {'wf': wf_mask*zc_7, 'cf': cf_mask*zc_7}, np.double(eq7)
     # return zc_6, zc_7
     
 def simmonds_et_al_2012(latGrid, lonGrid, u_prior, v_prior, u, v):
@@ -475,9 +396,6 @@ def mountain_mask(inLat, inLon):
 def geostrophic_thermal_advection(gx,gy,u,v):
     return -(u * gx + v * gy)
 
-def auto_derivative(data):
-    return np.gradient(data)
-
 def show(latGrid, lonGrid, data):
 
     plt.figure()
@@ -506,8 +424,23 @@ def distance_in_deg(lon1, lat1, lon2, lat2):
 
     return dist
 
+def auto_derivative(data):
+
+    # manually computing the derivative
+    shift_len = 1
+    data_right = np.pad(data, ((0, 0), (shift_len, 0)), mode='wrap')[:, :-shift_len]
+    # shifting down mean technically shifting up, cuz latGrid is increasing from 1 to 0
+    data_up = np.pad(data, ((shift_len, 0), (0, 0)), mode='constant', constant_values=np.nan)[:-shift_len, :]
+    dx = (data - data_right)
+    dy = (data - data_up)
+
+    # # using the built in function to find the derivative
+    # dy, dx = np.gradient(data)
+
+    return dx, dy
+
 # getting the gradient given lat, lon and data
-def geo_gradient(lat, lon, data):
+def geo_gradient_old(lat, lon, data):
 
     # compute the gradient of data, in dx, and dy
     dx, dy = auto_derivative(data)
@@ -516,12 +449,12 @@ def geo_gradient(lat, lon, data):
     distX, distY = compute_dist_grids(lat, lon)
 
     # # compute the d(data)/dx and d(data)/dy
-    dx = dx / distX 
-    dy = dy / distY 
+    dx_distX = dx / distX
+    dy_distY = dy / distY 
 
     # converting from per km to per 100 km 
-    dx = 100 * dx
-    dy = 100 * dy
+    dx = dx_distX
+    dy = dy_distY
 
     return dx, dy 
 
@@ -534,6 +467,40 @@ def geo_divergence(lat, lon, x, y):
 
     return div
 
+def dist_between_grids(lat0, lon0, lat1, lon1):
+
+    R_earth = 6378206.4
+
+    cosc = np.sin(lat0*np.pi/180.) * np.sin(lat1*np.pi/180.)  + np.cos(lat0*np.pi/180.) * np.cos(lat1*np.pi/180.) * np.cos(np.pi/180.*(lon1 - lon0))
+    cosc[cosc < -1] = -1
+    cosc[cosc > 1] = 1
+   
+    return np.arccos(cosc) * R_earth
+
+def geo_gradient(lat, lon, data): 
+    
+  # shift data forward
+  data_up, data_down, data_left, data_right = four_corner_shift(data)
+  lat_up, lat_down, lat_left, lat_right = four_corner_shift(lat)
+  lon_up, lon_down, lon_left, lon_right = four_corner_shift(lon)
+  lon_left[:, -1] = lon_left[:, -1] + 360
+  lon_right[:, 0] = lon_right[:, 0] - 360
+
+  # lat_shift_distance
+  dy1 = dist_between_grids(lat_down, lon_down, lat, lon)
+  dy2 = dist_between_grids(lat_up, lon_up, lat, lon)
+  dy1_data = (data_down - data)
+  dy2_data = (data - data_up)
+  dy = (dy2_data + dy1_data) / (dy1 + dy2)
+  
+  dx1 = dist_between_grids(lat_left, lon_left, lat, lon)
+  dx2 = dist_between_grids(lat, lon, lat_right, lon_right)
+  dx1_data = (data_left - data)
+  dx2_data = (data - data_right)
+  dx = (dx2_data + dx1_data) / (dx1 + dx2)
+
+  return dx, dy
+
 # computing the distance given the lat and lon grid
 def compute_dist_grids(lat, lon):
 
@@ -541,8 +508,8 @@ def compute_dist_grids(lat, lon):
     mean_radius_earth = 6371
 
     # compute the dx and dy using lat 
-    dxLat, dyLat = np.gradient(lat)
-    dxLon, dyLon = np.gradient(lon)
+    dxLat, dyLat = auto_derivative(lat)
+    dxLon, dyLon = auto_derivative(lon)
 
     # Haversine function to find distances between lat and lon
     lat1_x = lat * math.pi / 180; 
@@ -578,7 +545,7 @@ def compute_dist_grids(lat, lon):
     # c_y = np.arcsin(np.sqrt(a_y))
     distY = 2 * R * c_y; 
 
-    return distX, distY
+    return distX*1000., distY*1000.
 
 
 '''
@@ -792,4 +759,70 @@ def group_warm_cold_fronts(in_mask):
     out_array = in_mask
 
     return out_array
+
+def clean_fronts(wf, cf, cyc_lon, cyc_lat, cyc_center_lon, cyc_center_lat):
+
+    w_label, w_num = label(wf)
+    c_label, c_num = label(cf)
+
+    wf_list = []
+
+    for i_w in range(1, w_num+1):
+      ind = np.argwhere(w_label == i_w)
+
+      # gettin rid of clusters less than 2 pts
+      if (ind.shape[0] <= 2):
+        continue
+      i_w_lat = [cyc_lat[i_ind[0], i_ind[1]] for i_ind in ind]
+      i_w_lon = [cyc_lon[i_ind[0], i_ind[1]] for i_ind in ind]
+
+      # storm attribution
+      mean_lat = np.nanmean(i_w_lat)
+      mean_lon = np.nanmean(i_w_lon)
+      dist_deg = get_distance_deg(mean_lon, mean_lat, cyc_center_lon, cyc_center_lat)
+
+      # strom attibution conditions
+      if not ((mean_lon > cyc_center_lon) & (dist_deg < 15.) & (abs(cyc_center_lat - mean_lat) < 5.)):
+        continue
+
+      # final list of values 
+      wf_list.append([i_w_lon, i_w_lat])
+
+    cf_list = []
+    # all_cf_list = []
+    for i_c in range(1, c_num+1):
+      ind = np.argwhere(c_label == i_c)
+      if (ind.shape[0] <= 2):
+        continue
+
+      # keeping only the eastern most point on the front cluster
+      i_c_lat = np.asarray([cyc_lat[i_ind[0], i_ind[1]] for i_ind in ind])
+      i_c_lon = np.asarray([cyc_lon[i_ind[0], i_ind[1]] for i_ind in ind])
+      i_c_ind = np.asarray([i_ind for i_ind in ind])
+      # all_cf_list.append([i_c_lon, i_c_lat])
+
+      f_lat = []
+      f_lon = []
+      for uni_lat in set(i_c_lat):
+        uni_ind = (i_c_lat == uni_lat)
+        f_lat.append(uni_lat)
+        f_lon.append(np.nanmax(i_c_lon[uni_ind]))
+    
+      # strom attribution
+      mean_lat = np.nanmean(f_lat)
+      mean_lon = np.nanmean(f_lon)
+      dist_deg = get_distance_deg(mean_lon, mean_lat, cyc_center_lon, cyc_center_lat)
+
+      # storm attribution conditions
+      if not ((dist_deg < 15) & (abs(mean_lon - cyc_center_lon) < 7.5) & (mean_lat < cyc_center_lat)):
+        continue
+      
+      # addtiional conditions before selecting cold fronts
+      if not ((np.any(np.abs(f_lon - cyc_center_lon) < 2.5)) & ((90 - np.abs(np.nanmax(f_lat))) < 5) & ((cyc_center_lon - np.median(f_lon)) > 15)):
+        continue
+      
+      # for the remaining clusters I have to apply Haning filter that simmonds et al, 2012, allow more than one cluster
+      cf_list.append([f_lon, f_lat])
+
+    return wf_list, cf_list
 '''

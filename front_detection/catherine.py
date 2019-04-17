@@ -43,9 +43,9 @@ def fronts_for_date(latGrid, lonGrid, year, month, day, hour):
       c_info = dataset.variables['storm_info'][:]
 
       # CF_combined, CF_simmonds850, CF_hewson1km
-      # c_cf = dataset.variables['CF_combined'][:]
+      c_cf = dataset.variables['CF_combined'][:]
       # c_cf = dataset.variables['CF_simmonds850'][:]
-      c_cf = dataset.variables['CF_hewson1km'][:]
+      # c_cf = dataset.variables['CF_hewson1km'][:]
       c_cf_lon = c_cf[:,0]
       c_cf_lat = c_cf[:,1]
 
@@ -68,6 +68,12 @@ def fronts_for_date(latGrid, lonGrid, year, month, day, hour):
     
     cf_lat = np.asarray(cf_lat)
     cf_lon = np.asarray(cf_lon)
+
+    cf_lon[cf_lon > 180.] = cf_lon[cf_lon > 180] - 360.
+    cf_lon[cf_lon < -180.] = cf_lon[cf_lon < -180] + 360.
+    
+    wf_lon[wf_lon > 180.] = wf_lon[wf_lon > 180] - 360.
+    wf_lon[wf_lon < -180.] = wf_lon[wf_lon < -180] + 360.
 
     invalid_ind = (wf_lat == -999.) | (wf_lon == -999.)
     wf_lat = wf_lat[~invalid_ind]
@@ -95,5 +101,5 @@ def fronts_for_date(latGrid, lonGrid, year, month, day, hour):
     cf, _, _ = np.histogram2d(cf_lat, cf_lon, bins=(lat_edges, lon_edges))
     cf = np.double(cf > 0)
 
-    return wf, cf, c_slp, c_lat, c_lon
+    return wf, cf, c_slp, c_lat, c_lon, cf_lat, cf_lon, wf_lat, wf_lon
         

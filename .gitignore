@@ -14,6 +14,10 @@ images/*
 *.mat
 *.nc4
 *.nc
+data*
 
 # text files
 *.txt
+
+# 
+*.ipynb_checkpoints
