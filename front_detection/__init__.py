@@ -21,10 +21,15 @@ import matplotlib as mpl
 import os
 import glob
 
-def plot(data, cmap='jet', **kwargs):
+def plot(data, cmap='jet', equal=False,  **kwargs):
     '''Temporary code to plot figures quicky.'''
     plt.figure()
-    plt.pcolormesh(data, cmap=cmap, **kwargs)
+
+    if (equal):
+      datamax = np.nanmax(np.abs(data))
+      plt.pcolormesh(data, cmap='bwr', vmin=-datamax, vmax=datamax, **kwargs)
+    else:
+      plt.pcolormesh(data, cmap=cmap, **kwargs)
     plt.colorbar()
     plt.draw()
     plt.show(block=False)
@@ -43,7 +48,7 @@ def theta_from_temp_pres(temp, pres):
     return temp * (1000./pres)**(2/7)
 
 
-def hewson_1998(latGrid, lonGrid, theta, H850):
+def hewson_1998(latGrid, lonGrid, theta, hgt_agt):
     '''Computing the fronts based on Hewson 1998 methodology.'''
     gx, gy = geo_gradient(latGrid, lonGrid, theta)
     gNorm = norm(gx, gy)
@@ -117,54 +122,36 @@ def hewson_1998(latGrid, lonGrid, theta, H850):
     zc_6 = mask_zero_contour(latGrid, lonGrid, eq6)
     zc_6[~(m1_mask & m2_mask)] = 0.
 
-    # # ############### Method using equation 7 #############################
-    # eq7 = ((grad_abs_mu_x * mu_x) + (grad_abs_mu_y * mu_y))/(abs_mu)
-    #
-    # ########## Getting zero contour line using equation 7
-    # eq7_masked = np.copy(eq7)
-    # eq7_masked[~(m1_mask & m2_mask)] = np.nan
-    #
-    # zc_7 = mask_zero_contour(latGrid, lonGrid, eq7_masked)
-    #
-    # zc_7 = mask_zero_contour(latGrid, lonGrid, eq7)
-    # zc_7[~(m1_mask & m2_mask)] = np.nan
-    #
+    # ############### Method using equation 7 #############################
+    eq7 = ((grad_abs_mux * mux) + (grad_abs_muy * muy))/(abs_mu)
+
+    ########## Getting zero contour line using equation 7
+    eq7_masked = np.copy(eq7)
+    eq7_masked[~(m1_mask & m2_mask)] = np.nan
+
+    zc_7 = mask_zero_contour(latGrid, lonGrid, eq7_masked)
+
+    zc_7 = mask_zero_contour(latGrid, lonGrid, eq7)
+    zc_7[~(m1_mask & m2_mask)] = np.nan
+
 
     ######### getting cold and warm fronts
     # first, have to compute geostrophic winds at 850 hPa
 
-    # lat, lon, H
-    omega = 7.3e-5 # rad/s
-    rot_param = 9.8/(2 * omega * np.sin(latGrid * np.pi/180.))
+    grad_x, grad_y = geo_gradient(latGrid, lonGrid, hgt_agt)
+    rot_param = 4.*np.pi/24./3600.  * np.sin(latGrid *np.pi/180.)
 
-    rot_param[np.abs(latGrid) > 70] = np.nan
-    rot_param[np.abs(latGrid) < 20] = np.nan
+    ug = -(9.81/rot_param)*grad_y
+    vg = (9.81/rot_param)*grad_x
 
-    up_H850, down_H850, left_H850, right_H850 = four_corner_shift(H850, shift_len=1)
-    up_lat, down_lat, left_lat, right_lat = four_corner_shift(latGrid, shift_len=1)
-    up_lon, down_lon, left_lon, right_lon = four_corner_shift(lonGrid, shift_len=1)
-
-    dz_y = (down_H850  - up_H850)
-    dy = dist_between_grids(up_lat, up_lon, down_lat, down_lon)
-    
-    dz_x = (left_H850  - right_H850)
-    dx = dist_between_grids(left_lat, left_lon, right_lat, right_lon)
-
-    Vy = rot_param * (dz_y/dy)
-    Vx = rot_param * (dz_x/dx)
-    
-    vgx = -Vx*gx
-    vgy = -Vy*gy
-
-    # geostrophic thermal advection
-    gta = vgx + vgy
-   
+    gta = -1*(ug*gx + vg*gy)
+     
     # warm and cold front masks
     wf_mask = np.double(gta > 0)
     cf_mask = np.double(gta < 0)
 
 
-    return {'wf': wf_mask*zc_6, 'cf': cf_mask*zc_6}, np.double(eq6)
+    return {'wf': wf_mask*zc_6, 'cf': cf_mask*zc_6}, np.double(gta)
     # return {'wf': zc_6, 'cf': zc_6}
     # return {'wf': wf_mask*zc_7, 'cf': cf_mask*zc_7}, np.double(eq7)
     # return zc_6, zc_7

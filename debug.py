@@ -95,40 +95,6 @@ for t_step in range(1, in_time.shape[0]):
   # my_t_slp = np.squeeze(my_slp[(my_date == date), :, :])
   slp = in_slp[t_step, :, :]/100.
 
-  # llat = np.nanmin(cath_lat)
-  # ulat = np.nanmax(cath_lat)
-  # llon = np.nanmin(cath_lon)
-  # ulon = np.nanmax(cath_lon)
-
-  # plt.figure(figsize=(3,9))
-  # plt.subplot(311)
-  # m = Basemap(projection='cyl', urcrnrlat=ulat, llcrnrlat=llat, urcrnrlon=ulon, llcrnrlon=llon)
-  # m.contourf(lon, lat, slp, levels=np.arange(960, 1100, 10), cmap='jet')
-  # m.drawcoastlines()
-  # m.drawparallels(np.arange(-90, 90, 30), labels=[False, True, False, False])
-  # m.drawmeridians(np.arange(-180, 180, 30), labels=[False, False, False, True])
-  # m.colorbar()
-  # plt.title('INST6_3d_ANA_NP')
-  # plt.subplot(312)
-  # m = Basemap(projection='cyl', urcrnrlat=ulat, llcrnrlat=llat, urcrnrlon=ulon, llcrnrlon=llon)
-  # m.contourf(my_lon, my_lat, my_t_slp, levels=np.arange(960, 1100, 10), cmap='jet')
-  # m.colorbar()
-  # m.drawcoastlines()
-  # m.drawparallels(np.arange(-90, 90, 30), labels=[False, True, False, False])
-  # m.drawmeridians(np.arange(-180, 180, 30), labels=[False, False, False, True])
-  # plt.title('MY 6H averages SLP')
-  # plt.subplot(313)
-  # m = Basemap(projection='cyl', urcrnrlat=ulat, llcrnrlat=llat, urcrnrlon=ulon, llcrnrlon=llon)
-  # m.contourf(cath_lon, cath_lat, cath_slp, levels=np.arange(960, 1100, 10), cmap='jet')
-  # m.colorbar()
-  # m.drawcoastlines()
-  # m.drawparallels(np.arange(-90, 90, 30), labels=[False, True, False, False])
-  # m.drawmeridians(np.arange(-180, 180, 30), labels=[False, False, False, True])
-  # plt.title('CATH SLP')
-  # plt.tight_layout()
-  # plt.savefig('./images/slp_compare.png', dpi=300.)
-  # plt.close('all')
-
   # extracting the current and previous time step U & V wind speeds for the fronts
   # have to smooth the input data, catherine smooths it 10 times, so do I
   # weighting the center point 4x as heavier 
@@ -155,9 +121,9 @@ for t_step in range(1, in_time.shape[0]):
   # getting the height values from MERRA2
   H = geoH[t_step, :, :, :]
   H[H == geoH._FillValue] = np.nan
+
   H850 = geoH[t_step, lev850, :, :]
   H850[H850 == geoH._FillValue] = np.nan
-  # H = H / 9.8
 
   # getting the surface pressure in hPa 
   surface_pres = PS[t_step, :, :]/100.
@@ -318,37 +284,24 @@ for t_step in range(1, in_time.shape[0]):
   dsdiv[np.abs(lat) > 70] = np.nan
   dsdiv[np.abs(lon) > 170] = np.nan
 
+  # geostophic thermal advection
+  grad_x, grad_y = fd.geo_gradient(lat, lon, h1km)
+  rot_param = 4.*np.pi/24./3600.  * np.sin(lat *np.pi/180.)
+  rot_param[np.abs(lat) < 10] = np.nan
 
-  # lat, lon, H
-  omega = 7.3e-5 # rad/s
-  rot_param = 9.8/(2 * omega * np.sin(lat * np.pi/180.))
+  vgx = -(9.81/rot_param)*grad_y
+  vgy = (9.81/rot_param)*grad_x
 
-  rot_param[np.abs(lat) > 70] = np.nan
-  rot_param[np.abs(lat) < 20] = np.nan
-
-  up_H850, down_H850, left_H850, right_H850 = fd.four_corner_shift(H850, shift_len=1)
-  up_lat, down_lat, left_lat, right_lat = fd.four_corner_shift(lat, shift_len=1)
-  up_lon, down_lon, left_lon, right_lon = fd.four_corner_shift(lon, shift_len=1)
-
-  dz_y = (down_H850  - up_H850)
-  dy = fd.dist_between_grids(up_lat, up_lon, down_lat, down_lon)
+  vgx = fd.smooth_grid(vgx, iter=10, center_weight=4)
+  vgy = fd.smooth_grid(vgy, iter=10, center_weight=4)
   
-  dz_x = (left_H850  - right_H850)
-  dx = fd.dist_between_grids(left_lat, left_lon, right_lat, right_lon)
+  gta = -1*(vgx*gx + vgy*gy)
 
-  Vy = rot_param * (dz_y/dy)
-  Vx = rot_param * (dz_x/dx)
-  
-  vgx = -Vx*gx
-  vgy = -Vy*gy
-
-  gta = vgx + vgy
   c_gta[np.abs(lat) > 70] = np.nan
-  c_gta[np.abs(lat) < 20] = np.nan
-
-  breakpoint()
-
-
+  c_gta[np.abs(lat) < 30] = np.nan
+  gta[np.abs(lat) > 70] = np.nan
+  gta[np.abs(lat) < 30] = np.nan
+  
   # catherine fronts uncleaned
 
 
@@ -382,18 +335,22 @@ for t_step in range(1, in_time.shape[0]):
   cath_cf = cf
   
   zc = fd.mask_zero_contour(lat, lon, dsdiv)
-  wf, _, _ = np.histogram2d(temp_lat, temp_lon, bins=(lat_edges, lon_edges))
-  wf = np.double(wf > 0)
+  zc[zc == 0] = np.nan
+  zc[~(m1_mask & m2_mask)] = np.nan
+  my_cf = np.copy(zc)
+  my_wf = np.copy(zc)
 
+  my_wf[gta <= 0] = np.nan
+  my_cf[gta >= 0] = np.nan
+  
   # ############# JJ TEST END   ################
 
   # computing the simmonds fronts
   f_sim = fd.simmonds_et_al_2012(lat, lon, prev_u850, prev_v850, u850, v850) 
 
   # computing the hewson fronts using 1km temperature values, and U & V wind speeds at 850
-  u850 = U[t_step, lev850, :, :]
-  v850 = V[t_step, lev850, :, :]
   f_hew, var = fd.hewson_1998(lat, lon, theta1km, H850)
+  # f_hew, var = fd.hewson_1998(lat, lon, theta1km, h1km)
 
   # f_hew, var = fd.hewson_1998(lat, lon, theta850, H850)
   # zc_6, zc_7 = fd.hewson_1998(lat, lon, theta850, H850)
@@ -409,6 +366,9 @@ for t_step in range(1, in_time.shape[0]):
   wf = np.copy(wf_hew)
   cf = np.double((cf_hew + cf_sim) > 0)
   # cf = np.copy(cf_hew)
+
+  wf = my_wf
+  cf = my_cf
  
   ## Cleaning up the fronts
   s = generate_binary_structure(2,2)
@@ -488,49 +448,3 @@ for t_step in range(1, in_time.shape[0]):
 # slv2_id.close()
 ncid.close()
 
-'''
-### temp codes -- delete later
-# code to test slp data
-plt.close('all')
-llat = np.nanmin(cath_lat)
-ulat = np.nanmax(cath_lat)
-llon = np.nanmin(cath_lon)
-ulon = np.nanmax(cath_lon)
-
-my_ind = (my_date == date)
-my_t_slp = np.squeeze(my_slp[my_ind, :, :])
-slp = in_slp[t_step, :, :]/100.
-
-plt.figure(figsize=(3,9))
-plt.subplot(311)
-m = Basemap(projection='cyl', urcrnrlat=ulat, llcrnrlat=llat, urcrnrlon=ulon, llcrnrlon=llon)
-m.contourf(lon, lat, slp, levels=np.arange(960, 1100, 10), cmap='jet')
-m.drawcoastlines()
-m.drawparallels(np.arange(-90, 90, 30), labels=[False, True, False, False])
-m.drawmeridians(np.arange(-180, 180, 30), labels=[False, False, False, True])
-m.colorbar()
-plt.title('INST6_3d_ANA_NP')
-
-plt.subplot(312)
-m = Basemap(projection='cyl', urcrnrlat=ulat, llcrnrlat=llat, urcrnrlon=ulon, llcrnrlon=llon)
-m.contourf(my_lon, my_lat, my_t_slp, levels=np.arange(960, 1100, 10), cmap='jet')
-m.colorbar()
-m.drawcoastlines()
-m.drawparallels(np.arange(-90, 90, 30), labels=[False, True, False, False])
-m.drawmeridians(np.arange(-180, 180, 30), labels=[False, False, False, True])
-plt.title('MY 6H averages SLP')
-
-plt.subplot(313)
-m = Basemap(projection='cyl', urcrnrlat=ulat, llcrnrlat=llat, urcrnrlon=ulon, llcrnrlon=llon)
-m.contourf(cath_lon, cath_lat, cath_slp, levels=np.arange(960, 1100, 10), cmap='jet')
-m.colorbar()
-m.drawcoastlines()
-m.drawparallels(np.arange(-90, 90, 30), labels=[False, True, False, False])
-m.drawmeridians(np.arange(-180, 180, 30), labels=[False, False, False, True])
-plt.title('CATH SLP')
-
-plt.tight_layout()
-plt.savefig('./images/slp_compare.png', dpi=300.)
-
-ncid.close()
-'''
