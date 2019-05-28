@@ -367,9 +367,6 @@ for t_step in range(1, in_time.shape[0]):
   cf = np.double((cf_hew + cf_sim) > 0)
   # cf = np.copy(cf_hew)
 
-  wf = my_wf
-  cf = my_cf
- 
   ## Cleaning up the fronts
   s = generate_binary_structure(2,2)
   w_label, w_num = label(wf, structure=s)

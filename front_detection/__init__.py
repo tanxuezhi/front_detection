@@ -144,6 +144,9 @@ def hewson_1998(latGrid, lonGrid, theta, hgt_agt):
     ug = -(9.81/rot_param)*grad_y
     vg = (9.81/rot_param)*grad_x
 
+    ug = smooth_grid(ug, iter=10, center_weight=4.)
+    vg = smooth_grid(vg, iter=10, center_weight=4.)
+
     gta = -1*(ug*gx + vg*gy)
      
     # warm and cold front masks
@@ -461,8 +464,9 @@ def dist_between_grids(lat0, lon0, lat1, lon1):
     cosc = np.sin(lat0*np.pi/180.) * np.sin(lat1*np.pi/180.)  + np.cos(lat0*np.pi/180.) * np.cos(lat1*np.pi/180.) * np.cos(np.pi/180.*(lon1 - lon0))
     cosc[cosc < -1] = -1
     cosc[cosc > 1] = 1
-   
-    return np.arccos(cosc) * R_earth
+    dist = np.arccos(cosc) * R_earth
+
+    return dist
 
 def geo_gradient(lat, lon, data): 
     

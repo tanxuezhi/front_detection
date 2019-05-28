@@ -39,6 +39,7 @@ PS = ncid.variables['PS']
 # creating the cdt grid 
 lon, lat = np.meshgrid(in_lon, in_lat)
 
+# getting the index of the level 850
 lev850 = np.where(in_lev == 850)[0][0]
 
 print(' Completed!')
@@ -142,7 +143,8 @@ for t_step in range(1, in_time.shape[0]):
 
   # computing the hewson fronts using 1km temperature values, and geostrophic U & V winds at 850 hPa
   f_hew, var = fd.hewson_1998(lat, lon, theta1km, H850)
-  
+ 
+  # getting the front types
   wf_hew = f_hew['wf']
   cf_hew = f_hew['cf']
   cf_sim = f_sim['cf']
@@ -154,8 +156,16 @@ for t_step in range(1, in_time.shape[0]):
   wf = np.copy(wf_hew)
   cf = np.double((cf_hew + cf_sim) > 0)
   # cf = np.copy(cf_hew)
- 
-  ## Cleaning up the fronts
+  
+  ######################################################################################### 
+  ############################ CODE TO CLEAN UP THE FRONTS ################################
+  ######################################################################################### 
+
+  ##############################################################
+  ###### Group Fronts and get rid of small clusters ############
+  ##############################################################
+
+  # Grouping clusters of fronts
   s = generate_binary_structure(2,2)
   w_label, w_num = label(wf, structure=s)
   c_label, c_num = label(cf, structure=s)
@@ -167,13 +177,12 @@ for t_step in range(1, in_time.shape[0]):
       wf[w_label == i_w] = 0.
 
   # cleaning up the cold fronts and picking only the eastern most point
-  # cf_old = np.copy(cf)
   for i_c in range(1, c_num+1):
     x_ind, y_ind = np.where(c_label == i_c)
 
+    # keeping only clusters of 3 or more
     if (len(x_ind) < 3):
       cf[c_label == i_c] = 0.
-      # cf_old[c_label == i_c] = 0.
       continue
 
     # quick scatched up way to keep only eastern most points
@@ -185,12 +194,19 @@ for t_step in range(1, in_time.shape[0]):
         for y in remove_y: 
           cf[uni_x, y] = 0.
 
+
+  ############# Get Centers for the given date ######################
+  # create tracked cyclone centers
+  # find the centers for the given date
+  # 
+
   llat = 0
   ulat = 90
   llon = -180
   ulon = 0 
 
   plt.figure(figsize=(12,8))
+  plt.subplot(2,1,1)
   fronts = wf*10 + cf*-10
   # fronts = cf*-10
   fronts[~((fronts == 10) | (fronts == -10))] = np.nan
@@ -204,6 +220,25 @@ for t_step in range(1, in_time.shape[0]):
   m.drawcoastlines(linewidth=0.2)
   plt.axhline(y=0., linewidth=1.0, linestyle='--')
   plt.title('My Fronts')
+  
+  cath_wf, cath_cf, cath_slp, cath_lat, cath_lon, cf_lat, cf_lon, wf_lat, wf_lon = catherine.fronts_for_date(lat, lon, date.year, date.month, date.day, date.hour)
+  
+  plt.subplot(2,1,2)
+  fronts = cath_wf*10 + cath_cf*-10
+  fronts[~((fronts == 10) | (fronts == -10))] = np.nan
+  m = Basemap(projection='cyl', urcrnrlat=ulat, llcrnrlat=llat, urcrnrlon=ulon, llcrnrlon=llon)
+  # csf = plt.contourf(cath_lon, cath_lat, cath_slp)
+  csf = plt.contourf(lon, lat, var)
+  # csf = plt.contourf(lon, lat, slp)
+  cs = plt.contour(lon, lat, slp, lw=0.5, ls='--', colors='k', levels=np.arange(980, 1100, 5))
+  plt.clabel(cs, inline=1., fontsize=10., fmt='%.0f')
+  pc = m.pcolormesh(lon, lat, fronts, cmap='bwr')
+  m.colorbar(csf)
+  m.drawcoastlines(linewidth=0.2)
+  plt.axhline(y=0., linewidth=1.0, linestyle='--')
+  plt.title('Catherine Fronts')
+
+  plt.savefig('./images/test.png', dpi=300)
 
   plt.show()
   

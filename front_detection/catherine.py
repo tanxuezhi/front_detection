@@ -34,7 +34,7 @@ def fronts_for_date(latGrid, lonGrid, year, month, day, hour):
     wf_lon = []
 
     for c_file in c_files:
-      print (c_file)
+      # print (c_file)
       dataset = Dataset(c_file)
       dataset.set_auto_mask(False)
       c_lat = dataset.variables['latitude'][:]
