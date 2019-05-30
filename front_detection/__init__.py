@@ -154,7 +154,7 @@ def hewson_1998(latGrid, lonGrid, theta, hgt_agt):
     cf_mask = np.double(gta < 0)
 
 
-    return {'wf': wf_mask*zc_6, 'cf': cf_mask*zc_6}, np.double(gta)
+    return {'wf': wf_mask*zc_6, 'cf': cf_mask*zc_6, 'temp_grad': gNorm}, np.double(gta)
     # return {'wf': zc_6, 'cf': zc_6}
     # return {'wf': wf_mask*zc_7, 'cf': cf_mask*zc_7}, np.double(eq7)
     # return zc_6, zc_7
